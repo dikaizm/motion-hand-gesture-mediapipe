@@ -12,8 +12,8 @@ from collections import deque
 import math
 
 # Configuration
-MODEL_PATH = 'model/point_history_classifier/swipe_gesture_classifier_20260106_055250.tflite'
-HAND_LANDMARKER_PATH = 'model/hand_landmarker.task'
+MODEL_PATH = 'models/folder/swipe_gesture_classifier.tflite'
+HAND_LANDMARKER_PATH = 'models/hand_landmarker.task'
 TIME_STEPS = 16
 FEATURES_PER_STEP = 16  # [x, y, dx, dy, angle, dtheta] + 5 fingertips × 2 coords
 

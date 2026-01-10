@@ -4,7 +4,6 @@ import csv
 import copy
 import argparse
 import itertools
-from collections import Counter
 from collections import deque
 import os
 from datetime import datetime
@@ -16,9 +15,6 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from utils import CvFpsCalc
-from model import KeyPointClassifier
-from model import PointHistoryClassifier
-
 
 # Palm + orientation utilities for swipe gestures
 PALM_IDS = [0, 5, 9, 13, 17]  # wrist + MCP joints
@@ -93,7 +89,7 @@ def main():
     # Model load - MediaPipe Tasks API #############################################################
     # Get the path to the hand landmarker model
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(script_dir, 'model', 'hand_landmarker.task')
+    model_path = os.path.join(script_dir, 'models', 'hand_landmarker.task')
     
     # Create HandLandmarker options
     base_options = python.BaseOptions(model_asset_path=model_path)
@@ -109,25 +105,6 @@ def main():
     # Create the hand landmarker
     detector = vision.HandLandmarker.create_from_options(options)
 
-    keypoint_classifier = KeyPointClassifier()
-
-    point_history_classifier = PointHistoryClassifier()
-
-    # Read labels ###########################################################
-    with open(os.path.join(script_dir, 'model/keypoint_classifier/keypoint_classifier_label.csv'),
-              encoding='utf-8-sig') as f:
-        keypoint_classifier_labels = csv.reader(f)
-        keypoint_classifier_labels = [
-            row[0] for row in keypoint_classifier_labels
-        ]
-    with open(
-            os.path.join(script_dir, 'model/point_history_classifier/point_history_classifier_label.csv'),
-            encoding='utf-8-sig') as f:
-        point_history_classifier_labels = csv.reader(f)
-        point_history_classifier_labels = [
-            row[0] for row in point_history_classifier_labels
-        ]
-
     # FPS Measurement ########################################################
     cvFpsCalc = CvFpsCalc(buffer_len=10)
 
@@ -139,9 +116,6 @@ def main():
     
     # Palm pixel history (PIXEL SPACE - for visualization only)
     palm_pixel_history = deque(maxlen=history_length)
-
-    # Finger gesture history ################################################
-    finger_gesture_history = deque(maxlen=history_length)
 
     #  ########################################################################
     frame_timestamp_ms = 0
@@ -184,7 +158,7 @@ def main():
                     # New gesture key pressed - start recording
                     held_gesture_key = new_held_key
                     recording_count = 0
-                    csv_path = f'model/point_history_classifier/swipe_gesture_{session_timestamp}.csv'
+                    csv_path = f'data/swipe_gesture_{session_timestamp}.csv'
                     if csv_file is None:
                         csv_file = open(csv_path, 'a', newline="")
                         csv_writer = csv.writer(csv_file)
@@ -284,17 +258,6 @@ def main():
                         csv_writer.writerow([held_gesture_key, *frame_features])
                         csv_file.flush()  # Ensure data is written
                         recording_count += 1
-                
-                # For display - classify hand sign
-                pre_processed_landmark_list = pre_process_landmark(landmark_list)
-                hand_sign_id = keypoint_classifier(pre_processed_landmark_list)
-                debug_image = draw_info_text(
-                    debug_image,
-                    hands_data[0]['brect'],
-                    hands_data[0]['handedness'],
-                    keypoint_classifier_labels[hand_sign_id],
-                    "",
-                )
             elif current_mode == 'motion':
                 # No hand detected
                 prev_palm_normalized = None
@@ -388,48 +351,7 @@ def pre_process_landmark(landmark_list):
 
 
 
-def save_gesture_sample(gesture_label, recorded_point_history, window_size, session_timestamp):
-    """
-    Save gesture samples to separate CSV files based on gesture type.
-    Each session creates unique files with timestamp.
-    
-    Swipe gestures (label 0, 1) -> swipe_gesture_YYYYMMDD_HHMMSS.csv
-    - TIME-SERIES: Each row is ONE frame's observation (16-step history)
-    - Row format: [x, y, dx, dy, angle, d_angle] * 16 (96 features)
-    - A single 30-frame recording generates 30 rows of data.
-    
-    Selfie gesture (label 2) -> selfie_gesture_YYYYMMDD_HHMMSS.csv
-    - SINGLE FRAME: Each row is ONE selfie capture
-    - Row format: [left_thumb_x, y, ... right_index_y] (8 features)
-    """
-    if len(recorded_point_history) == 0:
-        return
-    
-    # Determine which CSV file to save to based on gesture type
-    if gesture_label in [0, 1]:  # Swipe gestures (time-series)
-        csv_path = f'model/point_history_classifier/swipe_gesture_{session_timestamp}.csv'
-        save_label = gesture_label  # 0 = Swipe Left, 1 = Swipe Right
-        
-        # Slicing ensures we don't save more than the window size if buffer overshot
-        frames_to_save = recorded_point_history[:window_size]
-        
-        # Write EACH frame as a separate training sample
-        # frame_data is already a flattened list of 16 history steps (96 features)
-        with open(csv_path, 'a', newline="") as f:
-            writer = csv.writer(f)
-            for frame_data in frames_to_save:
-                writer.writerow([save_label, *frame_data])
-                
-    else:  # Selfie gesture (label 2) - SINGLE FRAME
-        csv_path = f'model/point_history_classifier/selfie_gesture_{session_timestamp}.csv'
-        save_label = 0  # Remap to 0 for selfie model
-        
-        # Single frame - just take the first (and only) frame
-        frame_data = recorded_point_history[0]
-        
-        with open(csv_path, 'a', newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([save_label, *frame_data])
+
 
 
 def draw_landmarks(image, landmark_point):
